@@ -65,7 +65,8 @@ func GetColumnsFromMysqlTable(mariadbUser string, mariadbPassword string, mariad
 }
 
 // Generate go struct entries for a map[string]interface{} structure
-func generateMysqlTypes(obj map[string]map[string]string, columnsSorted []string, depth int, jsonAnnotation bool, gormAnnotation bool, gureguTypes bool) string {
+func generateMysqlTypes(obj map[string]map[string]string, columnsSorted []string, depth int, jsonAnnotation bool,
+	gormAnnotation bool, gureguTypes bool, noSqlType bool) string {
 	structure := "struct {"
 
 	for _, key := range columnsSorted {
@@ -84,7 +85,7 @@ func generateMysqlTypes(obj map[string]map[string]string, columnsSorted []string
 		var valueType string
 		// If the guregu (https://github.com/guregu/null) CLI option is passed use its types, otherwise use go's sql.NullX
 
-		valueType = mysqlTypeToGoType(mysqlType["value"], nullable, gureguTypes)
+		valueType = mysqlTypeToGoType(mysqlType["value"], nullable, gureguTypes, noSqlType)
 
 		fieldName := fmtFieldName(stringifyFirstChar(key))
 		var annotations []string
@@ -97,20 +98,24 @@ func generateMysqlTypes(obj map[string]map[string]string, columnsSorted []string
 
 		if len(annotations) > 0 {
 			// add colulmn comment
-			comment:=mysqlType["comment"]
+			comment := mysqlType["comment"]
+			comment = strings.ReplaceAll(comment, "\n", ",")
 			structure += fmt.Sprintf("\n%s %s `%s`  //%s", fieldName, valueType, strings.Join(annotations, " "), comment)
 			//structure += fmt.Sprintf("\n%s %s `%s`", fieldName, valueType, strings.Join(annotations, " "))
 		} else {
-			structure += fmt.Sprintf("\n%s %s",fieldName,valueType)
+			structure += fmt.Sprintf("\n%s %s", fieldName, valueType)
 		}
 	}
 	return structure
 }
 
 // mysqlTypeToGoType converts the mysql types to go compatible sql.Nullable (https://golang.org/pkg/database/sql/) types
-func mysqlTypeToGoType(mysqlType string, nullable bool, gureguTypes bool) string {
+func mysqlTypeToGoType(mysqlType string, nullable bool, gureguTypes bool, noSqlType bool) string {
 	switch mysqlType {
 	case "tinyint", "int", "smallint", "mediumint":
+		if noSqlType {
+			return golangInt
+		}
 		if nullable {
 			if gureguTypes {
 				return gureguNullInt
@@ -119,6 +124,9 @@ func mysqlTypeToGoType(mysqlType string, nullable bool, gureguTypes bool) string
 		}
 		return golangInt
 	case "bigint":
+		if noSqlType {
+			return golangInt64
+		}
 		if nullable {
 			if gureguTypes {
 				return gureguNullInt
@@ -127,6 +135,9 @@ func mysqlTypeToGoType(mysqlType string, nullable bool, gureguTypes bool) string
 		}
 		return golangInt64
 	case "char", "enum", "varchar", "longtext", "mediumtext", "text", "tinytext", "json":
+		if noSqlType {
+			return "string"
+		}
 		if nullable {
 			if gureguTypes {
 				return gureguNullString
@@ -135,11 +146,17 @@ func mysqlTypeToGoType(mysqlType string, nullable bool, gureguTypes bool) string
 		}
 		return "string"
 	case "date", "datetime", "time", "timestamp":
+		if noSqlType {
+			return golangTime
+		}
 		if nullable && gureguTypes {
 			return gureguNullTime
 		}
 		return golangTime
 	case "decimal", "double":
+		if noSqlType {
+			return golangFloat64
+		}
 		if nullable {
 			if gureguTypes {
 				return gureguNullFloat
@@ -148,6 +165,9 @@ func mysqlTypeToGoType(mysqlType string, nullable bool, gureguTypes bool) string
 		}
 		return golangFloat64
 	case "float":
+		if noSqlType {
+			return golangFloat32
+		}
 		if nullable {
 			if gureguTypes {
 				return gureguNullFloat
